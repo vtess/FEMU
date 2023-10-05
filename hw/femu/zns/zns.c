@@ -524,7 +524,7 @@ static void advance_read_pointer(FemuCtrl *n)
 static inline struct ppa lpn_to_ppa(FemuCtrl *n, NvmeNamespace *ns, uint64_t lpn)
 {
 
-	uint32_t zone_idx = zns_zone_idx(ns, (lpn * 4096));
+	uint32_t zone_idx = zns_zone_idx(ns, (lpn * 8));
 
 	struct zns_ssd *zns = n->zns;
 	struct write_pointer *wpp = &zns->wp;
@@ -1307,8 +1307,8 @@ static uint16_t zns_read(FemuCtrl *n, NvmeNamespace *ns, NvmeCmd *cmd,
 
     backend_rw(n->mbe, &req->qsg, &data_offset, req->is_write);
 
-    uint64_t slpn = (slba) / 4096;
-    uint64_t elpn = (slba + nlb - 1) / 4096;
+    uint64_t slpn = (slba) / 8;
+    uint64_t elpn = (slba + nlb - 1) / 8;
     uint64_t lpn;
     struct ppa ppa;
     uint64_t sublat,maxlat=0;
@@ -1383,8 +1383,8 @@ static uint16_t zns_write(FemuCtrl *n, NvmeNamespace *ns, NvmeCmd *cmd,
     backend_rw(n->mbe, &req->qsg, &data_offset, req->is_write);
     zns_finalize_zoned_write(ns, req, false);
 
-    uint64_t slpn = (slba) / 4096;
-    uint64_t elpn = (slba + nlb - 1) / 4096;
+    uint64_t slpn = (slba) / 8;
+    uint64_t elpn = (slba + nlb - 1) / 8;
 
     uint64_t lpn;
     struct ppa ppa;
