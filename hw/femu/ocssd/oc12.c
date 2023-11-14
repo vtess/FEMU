@@ -421,6 +421,24 @@ static int oc12_advance_status(FemuCtrl *n, NvmeNamespace *ns, NvmeCmd *cmd,
     return 0;
 }
 
+static uint16_t nvme_map_dptr(FemuCtrl *n, size_t len, NvmeRequest *req)
+{
+    uint64_t prp1, prp2;
+
+    switch (req->cmd.psdt) {
+    case NVME_PSDT_PRP:
+        prp1 = le64_to_cpu(req->cmd.dptr.prp1);
+        prp2 = le64_to_cpu(req->cmd.dptr.prp2);
+
+        return nvme_map_prp(&req->qsg, &req->iov, prp1, prp2, len, n);
+    case NVME_PSDT_SGL_MPTR_CONTIGUOUS:
+    case NVME_PSDT_SGL_MPTR_SGL:
+        return nvme_map_sgl(n, &req->qsg, req->cmd.dptr.sgl, len, &req->cmd);
+    default:
+        return NVME_INVALID_FIELD;
+    }
+}
+
 static uint16_t oc12_read(FemuCtrl *n, NvmeNamespace *ns, NvmeCmd *cmd,
                           NvmeRequest *req)
 {
@@ -474,7 +492,7 @@ static uint16_t oc12_read(FemuCtrl *n, NvmeNamespace *ns, NvmeCmd *cmd,
     }
 
     /* DMA user data */
-    if (nvme_map_prp(&req->qsg, &req->iov, prp1, prp2, data_size, n)) {
+    if (nvme_map_dptr(n, data_size, req)) {
         femu_err("oc12_read: malformed prp (sz:%lu)\n", data_size);
         err = NVME_INVALID_FIELD | NVME_DNR;
         goto fail_free;
@@ -553,7 +571,7 @@ static uint16_t oc12_write(FemuCtrl *n, NvmeNamespace *ns, NvmeCmd *cmd,
     }
 
     /* DMA user data */
-    if (nvme_map_prp(&req->qsg, &req->iov, prp1, prp2, data_size, n)) {
+    if (nvme_map_dptr(n, data_size, req)) {
         femu_err("oc12_write: malformed prp (sz:%lu)\n", data_size);
         err = NVME_INVALID_FIELD | NVME_DNR;
         goto fail_free;

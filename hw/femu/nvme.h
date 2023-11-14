@@ -8,6 +8,7 @@
 #include "qemu/memalign.h"
 #include "hw/pci/msix.h"
 #include "hw/pci/msi.h"
+#include "hw/pci/pci.h"
 #include "hw/virtio/vhost.h"
 #include "qapi/error.h"
 #include "sysemu/kvm.h"
@@ -17,6 +18,21 @@
 #include "inc/pqueue.h"
 #include "nand/nand.h"
 #include "timing-model/timing.h"
+
+// from include/block/nvme.h
+#define NVME_CTRL_SGLS_SUPPORT_MASK        (0x3 <<  0)
+#define NVME_CTRL_SGLS_SUPPORT_NO_ALIGN    (0x1 <<  0)
+#define NVME_CTRL_SGLS_SUPPORT_DWORD_ALIGN (0x1 <<  1)
+#define NVME_CTRL_SGLS_KEYED               (0x1 <<  2)
+#define NVME_CTRL_SGLS_BITBUCKET           (0x1 << 16)
+#define NVME_CTRL_SGLS_MPTR_CONTIGUOUS     (0x1 << 17)
+#define NVME_CTRL_SGLS_EXCESS_LENGTH       (0x1 << 18)
+#define NVME_CTRL_SGLS_MPTR_SGL            (0x1 << 19)
+#define NVME_CTRL_SGLS_ADDR_OFFSET         (0x1 << 20)
+
+#define NVME_SGL_TYPE(type)     ((type >> 4) & 0xf)
+#define NVME_SGL_SUBTYPE(type)  (type & 0xf)
+
 
 #define NVME_ID_NS_LBADS(ns)                                                  \
     ((ns)->id_ns.lbaf[NVME_ID_NS_FLBAS_INDEX((ns)->id_ns.flbas)].lbads)
@@ -72,6 +88,34 @@ enum NvmeCapMask {
     CAP_MPSMIN_MASK    = 0xf,
     CAP_MPSMAX_MASK    = 0xf,
 };
+
+enum NvmeSglDescriptorType {
+    NVME_SGL_DESCR_TYPE_DATA_BLOCK          = 0x0,
+    NVME_SGL_DESCR_TYPE_BIT_BUCKET          = 0x1,
+    NVME_SGL_DESCR_TYPE_SEGMENT             = 0x2,
+    NVME_SGL_DESCR_TYPE_LAST_SEGMENT        = 0x3,
+    NVME_SGL_DESCR_TYPE_KEYED_DATA_BLOCK    = 0x4,
+
+    NVME_SGL_DESCR_TYPE_VENDOR_SPECIFIC     = 0xf,
+};
+
+enum NvmeSglDescriptorSubtype {
+    NVME_SGL_DESCR_SUBTYPE_ADDRESS = 0x0,
+};
+
+enum {
+    NVME_SG_ALLOC = 1 << 0,
+    NVME_SG_DMA   = 1 << 1,
+};
+
+typedef struct NvmeSg {
+    int flags;
+
+    union {
+        QEMUSGList   qsg;
+        QEMUIOVector iov;
+    };
+} NvmeSg;
 
 #define NVME_MAX_QS PCI_MSIX_FLAGS_QSIZE
 #define NVME_MAX_QUEUE_ENTRIES  0xffff
@@ -531,6 +575,12 @@ enum NvmeStatusCodes {
     NVME_CMD_ABORT_MISSING_FUSE = 0x000a,
     NVME_INVALID_NSID           = 0x000b,
     NVME_CMD_SEQ_ERROR          = 0x000c,
+    NVME_INVALID_SGL_SEG_DESCR  = 0x000d,
+    NVME_INVALID_NUM_SGL_DESCRS = 0x000e,
+    NVME_DATA_SGL_LEN_INVALID   = 0x000f,
+    NVME_MD_SGL_LEN_INVALID     = 0x0010,
+    NVME_SGL_DESCR_TYPE_INVALID = 0x0011,
+    NVME_INVALID_USE_OF_CMB     = 0x0012,
     NVME_INVALID_CMD_SET        = 0x002c,
     NVME_LBA_RANGE              = 0x0080,
     NVME_CAP_EXCEEDED           = 0x0081,
@@ -1440,15 +1490,17 @@ int nvme_setup_virq(FemuCtrl *n, NvmeCQueue *cq);
 int nvme_clear_virq(FemuCtrl *n);
 
 /* Public DMA APIs from dma.c */
-void     nvme_addr_read(FemuCtrl *n, hwaddr addr, void *buf, int size);
-void     nvme_addr_write(FemuCtrl *n, hwaddr addr, void *buf, int size);
+int nvme_addr_read(FemuCtrl *n, hwaddr addr, void *buf, int size);
+int nvme_addr_write(FemuCtrl *n, hwaddr addr, void *buf, int size);
 uint16_t nvme_map_prp(QEMUSGList *qsg, QEMUIOVector *iov, uint64_t prp1,
                       uint64_t prp2, uint32_t len, FemuCtrl *n);
 uint16_t dma_write_prp(FemuCtrl *n, uint8_t *ptr, uint32_t len, uint64_t
                             prp1, uint64_t prp2);
 uint16_t dma_read_prp(FemuCtrl *n, uint8_t *ptr, uint32_t len, uint64_t
                            prp1, uint64_t prp2);
-
+// uint16_t nvme_map_dptr(FemuCtrl *n, size_t len, NvmeRequest *req);
+uint16_t nvme_map_sgl(FemuCtrl *n, QEMUSGList *sg, NvmeSglDescriptor sgl,
+                             size_t len, NvmeCmd *cmd);
 
 /* Misc */
 uint64_t *nvme_setup_discontig(FemuCtrl *n, uint64_t prp_addr, uint16_t

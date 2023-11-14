@@ -429,6 +429,7 @@ static void nvme_init_ctrl(FemuCtrl *n)
     id->psd[0].mp    = cpu_to_le16(0x9c4);
     id->psd[0].enlat = cpu_to_le32(0x10);
     id->psd[0].exlat = cpu_to_le32(0x4);
+    id->sgls = cpu_to_le32(NVME_CTRL_SGLS_SUPPORT_NO_ALIGN | NVME_CTRL_SGLS_BITBUCKET); // NVMe SGL Support
 
     n->features.arbitration     = 0x1f0f0706;
     n->features.power_mgmt      = 0;

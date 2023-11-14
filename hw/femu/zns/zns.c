@@ -1175,6 +1175,9 @@ static uint16_t zns_map_dptr(FemuCtrl *n, size_t len, NvmeRequest *req)
         prp2 = le64_to_cpu(req->cmd.dptr.prp2);
 
         return nvme_map_prp(&req->qsg, &req->iov, prp1, prp2, len, n);
+    case NVME_PSDT_SGL_MPTR_CONTIGUOUS:
+    case NVME_PSDT_SGL_MPTR_SGL:
+        return nvme_map_sgl(n, &req->qsg, req->cmd.dptr.sgl, len, &req->cmd);
     default:
         return NVME_INVALID_FIELD;
     }
